@@ -108,6 +108,22 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .copy-message {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #4CAF50; /* Green */
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 2001;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .copy-message.show {
+            opacity: 1;
+        }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -224,6 +240,10 @@
         <p class="text-lg text-neutral-700">Carregando dados...</p>
     </div>
 
+    <div id="copyMessage" class="copy-message hidden">
+        Número copiado!
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -274,7 +294,6 @@
         const userIdDisplay = document.getElementById('userIdDisplay');
 
         const addServiceBtn = document.getElementById('addServiceBtn');
-        // Referências corrigidas para o modal e formulário de serviço
         const serviceModal = document.getElementById('serviceModal'); 
         const closeServiceModal = document.getElementById('closeServiceModal'); 
         const serviceForm = document.getElementById('serviceForm'); 
@@ -282,6 +301,7 @@
         const providerIdToEditInput = document.getElementById('providerIdToEdit'); 
         
         const newDataIndicacaoInput = document.getElementById('newDataIndicacao');
+        const newTelefoneInput = document.getElementById('newTelefone'); // Referência ao campo de telefone no modal
 
         const newCategoriaSelect = document.getElementById('newCategoriaSelect');
         const newCategoryOtherInputContainer = document.getElementById('newCategoryOtherInputContainer');
@@ -294,8 +314,44 @@
         let providerToDeleteId = null;
 
         const loadingOverlay = document.getElementById('loadingOverlay');
+        const copyMessage = document.getElementById('copyMessage'); // Referência à mensagem de copiado
 
         let providersCollectionRef;
+
+        // Função para formatar o telefone
+        function formatPhoneNumber(phoneNumber) {
+            // Remove tudo que não for dígito
+            const cleaned = ('' + phoneNumber).replace(/\D/g, '');
+            const match = cleaned.match(/^(\d{2})(\d{5})(\d{4})$/); // Formato (XX) XXXXX-XXXX
+            if (match) {
+                return '(' + match[1] + ') ' + match[2] + '-' + match[3];
+            }
+            // Se não for 11 dígitos, tenta o formato (XX) XXXX-XXXX
+            const match2 = cleaned.match(/^(\d{2})(\d{4})(\d{4})$/); // Formato (XX) XXXX-XXXX
+            if (match2) {
+                return '(' + match2[1] + ') ' + match2[2] + '-' + match2[3];
+            }
+            return phoneNumber; // Retorna o original se não conseguir formatar
+        }
+
+        // Função para copiar para a área de transferência
+        function copyToClipboard(text) {
+            const tempInput = document.createElement('textarea');
+            tempInput.value = text;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            try {
+                document.execCommand('copy');
+                copyMessage.classList.add('show');
+                setTimeout(() => {
+                    copyMessage.classList.remove('show');
+                }, 2000); // Esconde a mensagem após 2 segundos
+            } catch (err) {
+                console.error('Erro ao copiar: ', err);
+                alert('Erro ao copiar o número. Por favor, tente novamente.');
+            }
+            document.body.removeChild(tempInput);
+        }
 
         async function initializeFirebase() {
             try {
@@ -378,7 +434,9 @@
                     `).join('');
 
                     card.innerHTML = `
-                        <div class="absolute top-2 right-2 flex space-x-2">
+                        <div class="absolute top-2 right-2 flex space-x-2 z-10">
+                            <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs p-1 rounded-full w-6 h-6 flex items-center justify-center copy-phone-btn" data-phone="${provider.telefone}" title="Copiar Telefone">
+                                &#x2398; </button>
                             <button class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold p-1 rounded-full w-6 h-6 flex items-center justify-center edit-btn" data-id="${provider.id}" title="Editar Contato">
                                 &#9998; </button>
                             <button class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold p-1 rounded-full w-6 h-6 flex items-center justify-center delete-btn" data-id="${provider.id}" title="Deletar Contato">
@@ -386,8 +444,13 @@
                             </button>
                         </div>
                         <h3 class="text-xl font-semibold text-teal-700 mb-2">${provider.nome}</h3>
-                        <p class="text-sm text-neutral-600 mb-1"><strong class="font-medium">Serviço:</strong> ${provider.categoria}</p>
-                        <p class="text-sm text-neutral-600 mb-1"><strong class="font-medium">Telefone:</strong> ${provider.telefone}</p>
+                        <p class="text-sm text-neutral-600 mb-1">
+                            <strong class="font-medium">Serviço:</strong> ${provider.categoria}
+                        </p>
+                        <p class="text-sm text-neutral-600 mb-1">
+                            <strong class="font-medium">Telefone:</strong> 
+                            <span>${formatPhoneNumber(provider.telefone)}</span>
+                        </p>
                         <p class="text-sm text-neutral-600 mb-1"><strong class="font-medium">Indicado por:</strong> ${provider.indicadoPor}</p>
                         <div class="mt-2 mb-3 text-sm text-neutral-600 bg-amber-50 p-3 rounded-md border border-amber-200">
                             <strong class="font-medium block mb-1">Observações:</strong>
@@ -460,13 +523,22 @@
                             }
 
                             document.getElementById('newNome').value = provider.nome;
-                            document.getElementById('newTelefone').value = provider.telefone;
+                            newTelefoneInput.value = provider.telefone; // Preenche o campo de telefone com o valor original
                             document.getElementById('newIndicadoPor').value = provider.indicadoPor;
                             document.getElementById('newObservacoes').value = provider.observacoes;
                             document.getElementById('newDataIndicacao').value = provider.dataIndicacao; // Data já é readonly
 
                             serviceModal.classList.remove('hidden'); // Abre o modal
                         }
+                    });
+                });
+
+                // Adicionar listener para o botão de copiar telefone
+                document.querySelectorAll('.copy-phone-btn').forEach(button => {
+                    button.addEventListener('click', (event) => {
+                        // Garante que o data-phone seja o número sem formatação para copiar
+                        const phoneNumber = event.target.dataset.phone; 
+                        copyToClipboard(phoneNumber);
                     });
                 });
 
